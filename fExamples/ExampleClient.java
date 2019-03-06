@@ -1,7 +1,9 @@
-package fClient;
+package fExamples;
 
 import java.net.InetAddress;
 import java.lang.Exception;
+
+import fSupport.FClient;
 import fSupport.FThreadFunc;
 
 public class ExampleClient {
@@ -13,10 +15,12 @@ public class ExampleClient {
 
 		try {
 			//initialize client (on same machine as server)
-			FClient testClient = new FClient(50093, InetAddress.getLocalHost().getHostName());
+			FClient testClient = new FClient(50093, InetAddress.getLocalHost().getHostName(), "examplePassword");
 			
-			//function for client to perform
-			//NOTE: id param filled in automatically
+			/**
+			 * function for client to perform
+			 * NOTE: @param id required, but filled in automatically
+			 */
 			FThreadFunc lambda = (obj, id) ->
 			{
 				testClient.Send((String)obj, id);

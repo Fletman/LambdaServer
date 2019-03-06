@@ -1,57 +1,62 @@
-package fServer;
+package fSupport;
 
 import java.net.*;
 import java.lang.Exception;
-
-import fSupport.*;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.security.MessageDigest;
 
 public class FServer implements FThreadOwner, FSocket
 {
-	private final int DEFAULT_THREADS = 16; //default to allow maximum 16 threads
+	protected final int DEFAULT_THREADS = 16; //default to allow maximum 16 threads
 	
 	//server info
-	private InetSocketAddress addr;
-	private ServerSocket listener;
-	private FThread listenThread;
+	protected InetSocketAddress addr;
+	protected ServerSocket listener;
+	protected FThread listenThread;
 
 	//list of sockets and corresponding threads
-	private Socket[] connections;
-	private FThread[] connThreads;
-	private InputStream[] iStream;
-	private OutputStream[] oStream;
+	protected Socket[] connections;
+	protected FThread[] connThreads;
+	protected InputStream[] iStream;
+	protected OutputStream[] oStream;
 	
-	private final int BUFF_SIZE = 128; //128 bytes per input/output buffer
+	protected final int BUFF_SIZE = 128; //128 bytes per input/output buffer
 	
 	//thread lambda function & argument
-	private FThreadFunc f = null;
-	private Object arg;
+	protected FThreadFunc f = null;
+	protected Object arg;
 	
+	//password digest that incoming clients must present
+	protected String password;
+	protected byte[] serverDigest;
 	
-	public FServer(int p)
+	public FServer(int port, String pass)
 	{	
 		try{
-			Setup(p, DEFAULT_THREADS);			
+			Setup(port, DEFAULT_THREADS);	
+			password = pass;
+			CreateDigest();
 		}
 		catch(Exception e)
 		{
-			System.out.println("[" + p + "]Failed to create new socket:");
+			System.out.println("[" + port + "]Failed to create new FServer:");
 			e.printStackTrace();
 			System.exit(-1);
 		}
 	}
 	
-	public FServer(int p, int threadCount)
+	public FServer(int port, int threadCount, String pass)
 	{	
 		try{
-			Setup(p, threadCount);			
+			Setup(port, threadCount);		
+			password = pass;
+			CreateDigest();
 		}
 		catch(Exception e)
 		{
-			System.out.println("[" + p + "]Failed to create new socket:");
+			System.out.println("[" + port + "]Failed to create new FServer:");
 			e.printStackTrace();
 			System.exit(-1);
 		}
@@ -63,7 +68,7 @@ public class FServer implements FThreadOwner, FSocket
 	 * @param threads Max number of threads allowed on server
 	 * @throws Exception
 	 */
-	private void Setup(int port, int threads) throws Exception
+	protected void Setup(int port, int threads) throws Exception
 	{
 		addr = new InetSocketAddress(InetAddress.getLocalHost(), port);
 		listener = new ServerSocket();
@@ -74,6 +79,48 @@ public class FServer implements FThreadOwner, FSocket
 		
 		iStream = new InputStream[threads];
 		oStream = new OutputStream[threads];
+	}
+	
+	@Override
+	public void CreateDigest() throws Exception
+	{
+		serverDigest = MessageDigest.getInstance("SHA-256").digest(password.getBytes());
+	}
+	
+	@Override
+	public boolean Handshake(Socket client) throws Exception
+	{
+		InputStream clientIn = client.getInputStream();
+		OutputStream clientOut = client.getOutputStream();
+		
+		String clientDigest = "";		
+		byte[] recv;
+		int len;
+		
+		//read input in chunks to allow variable message sizes
+		do{
+			recv = new byte[BUFF_SIZE]; //clear out input buffer
+			len = clientIn.read(recv); //read byte array from socket
+			clientDigest += new String(recv, 0, len); //append bytes to output string
+		}
+		while(len == BUFF_SIZE);
+		
+		boolean isAccepted = MessageDigest.isEqual(serverDigest, clientDigest.getBytes());
+		
+		if(!isAccepted)
+		{
+			clientOut.write(new String("N").getBytes());
+		}
+		else
+		{
+			clientOut.write(new String("Y").getBytes());
+		}
+		
+		//TODO: does order of closing matter here? Let's find out
+		//clientIn.close();
+		//clientOut.close();
+		
+		return isAccepted;
 	}
 	
 	@Override
@@ -98,7 +145,7 @@ public class FServer implements FThreadOwner, FSocket
 		listenThread.join();
 	}
 	
-	private FThreadFunc CreateHandler()
+	protected FThreadFunc CreateHandler()
 	{
 		FThreadFunc handle = (obj, id) ->
 		{
@@ -117,6 +164,13 @@ public class FServer implements FThreadOwner, FSocket
 				}
 				
 				System.out.println("Connection acquired.");
+				
+				if(!Handshake(tempSock))
+				{
+					System.out.println("Invalid Digest presented");
+					tempSock = null;
+					continue;
+				}
 				
 				for(int i = 0; i < connections.length; i++)
 				{
@@ -147,6 +201,12 @@ public class FServer implements FThreadOwner, FSocket
 		int packets = (int) Math.ceil((double)msg.length()/BUFF_SIZE);
 		byte[] b = msg.getBytes();
 		
+		if(oStream[id] == null)
+		{
+			System.out.println("WHAT " + id);
+			System.exit(-1);
+		}
+		
 		for(int i = 0; i < packets; i++)
 		{
 			oStream[id].write(b, i * BUFF_SIZE, Math.min(b.length, BUFF_SIZE));
@@ -167,7 +227,7 @@ public class FServer implements FThreadOwner, FSocket
 			len = iStream[id].read(recv); //read byte array from socket
 			msg += new String(recv, 0, len); //append bytes to output string
 		}
-		while(len == BUFF_SIZE);
+		while(len == BUFF_SIZE); //TODO: is there an edge case when receiving exactly BUFF_SIZE?
 				
 		return msg;
 	}	

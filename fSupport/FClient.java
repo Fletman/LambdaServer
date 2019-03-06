@@ -1,31 +1,35 @@
-package fClient;
+package fSupport;
 
 import java.net.*;
-
-import fSupport.*;
-
 import java.lang.Exception;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.security.MessageDigest;
 
 public class FClient implements FThreadOwner, FSocket
 {
-	private Socket sock; //client's communications socket
-	private InputStream iStream; //socket receiving stream
-	private OutputStream oStream; //socket sending stream
-	private final int BUFF_SIZE = 128; //maximum size of input/output buffer
+	protected Socket sock; //client's communications socket
+	protected InputStream iStream; //socket receiving stream
+	protected OutputStream oStream; //socket sending stream
+	protected final int BUFF_SIZE = 128; //maximum size of input/output buffer
 	
-	private FThread clientThread; //thread the lambda function will run
-	private FThreadFunc f = null; //lambda function
-	private Object arg; //argument for lambda function
+	protected FThread clientThread; //thread the lambda function will run
+	protected FThreadFunc f = null; //lambda function
+	protected Object arg; //argument for lambda function
+	
+	protected String password; //password used for handshake with Server
+	protected byte[] clientDigest;
 	
 	
-	public FClient(int port, String hostName)
+	public FClient(int port, String hostName, String pass)
 	{
 		try{
 			sock = new Socket(InetAddress.getByName(hostName), port, null, 0);
 			iStream = sock.getInputStream();
 			oStream = sock.getOutputStream();
+			
+			password = pass;
+			CreateDigest();
 		}
 		catch(Exception e)
 		{
@@ -33,6 +37,34 @@ public class FClient implements FThreadOwner, FSocket
 			e.printStackTrace();
 			System.exit(-1);
 		}
+	}
+	
+	@Override
+	public void CreateDigest() throws Exception
+	{
+		clientDigest = MessageDigest.getInstance("SHA-256").digest(password.getBytes());
+	}
+	
+	/**
+	 * @param server not used here; only one (known) socket allowed per client
+	 */
+	@Override
+	public boolean Handshake(Socket server)
+	{
+		try
+		{
+			Send(new String(clientDigest), 0);
+			String result = Receive(0);
+				
+			return result.equals("Y");
+		}
+		catch (Exception e)
+		{
+			e.printStackTrace();
+			System.exit(-1);
+		}
+		
+		return false;
 	}
 	
 	//set lambda function for a thread to run
@@ -57,6 +89,13 @@ public class FClient implements FThreadOwner, FSocket
 	@Override
 	public void StartThread(int t) throws Exception
 	{
+		if(!Handshake(null))
+		{
+			System.out.println("Failed connection authentication");
+			sock.close();
+			return;
+		}
+		
 		clientThread = new FThread(t, f, arg, this);
 		clientThread.start();
 		clientThread.join();
@@ -67,14 +106,23 @@ public class FClient implements FThreadOwner, FSocket
 	{
 		System.out.println("Thread [" + t + "] exiting");
 		
-		iStream.close();
-		oStream.close();
+		if(iStream != null)
+		{
+			iStream.close();
+			iStream = null;
+		}
+
+		if(oStream != null)
+		{
+			oStream.close();
+			oStream = null;
+		}
 		
-		iStream = null;
-		oStream = null;
-		
-		sock.close();
-		sock = null;
+		if(sock != null)
+		{
+			sock.close();
+			sock = null;
+		}
 	}
 
 	

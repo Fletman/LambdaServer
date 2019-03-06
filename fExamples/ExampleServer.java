@@ -1,6 +1,8 @@
-package fServer;
+package fExamples;
 
+import fSupport.FServer;
 import fSupport.FThreadFunc;
+
 import java.lang.Exception;
 
 
@@ -12,7 +14,7 @@ public class ExampleServer {
 		String message = "Greetings from the Server";
 		
 		//new server using port #50093
-		FServer testServ = new FServer(50093);
+		FServer testServ = new FServer(50093, "examplePassword");
 		try {
 			//NOTE: id field filled in automatically
 			FThreadFunc lambda = (obj, id) ->
