@@ -198,6 +198,15 @@ public class FServer implements FThreadOwner, FSocket
 	@Override
 	public void Send(String msg, int id) throws Exception
 	{
+		/*
+		 * edge case where message length is a multiple of buffer size,
+		 * causes Receive to get stuck indefinitely
+		 */
+		if(msg.length() % BUFF_SIZE == 0)
+		{
+			msg += '\0'; //increase message size by one with a null byte
+		}
+		
 		int packets = (int) Math.ceil((double)msg.length()/BUFF_SIZE);
 		byte[] b = msg.getBytes();
 		
